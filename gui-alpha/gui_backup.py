@@ -25,7 +25,7 @@ def button_callback(sender, app_data):
 
 dpg.create_viewport(title='etirehotel Lagerlisten-Generator', width=600, height=800) #Hauptfenster festlegen
 
-width, height, channels, data = dpg.load_image("c:/Users/jonas.mueller/Downloads/Python/Lagerlisten Generator GUI/Logo-etirehotel_klein.png")
+width, height, channels, data = dpg.load_image("./Logo-etirehotel_klein.png")
 
 with dpg.texture_registry(show=False):
     eth_logo = dpg.add_static_texture(width, height, data) #eth Logo als Grafik einlesen

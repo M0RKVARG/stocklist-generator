@@ -55,7 +55,7 @@ if typ_regale == "1":
 elif typ_regale == "2":
     regale = regale_zahlen()
 else:
-#sys.exit bricht Programm mit entsprechender Fehlermeldung ab
+#sys.exit bricht Programm bei Falscheingabe mit entsprechender Fehlermeldung ab
     sys.exit("Falsche Eingabe!!! Programm wird beendet.")
 
 input_lagerort = input("Zu welchem Lagerort gehören diese Regale?\nEingabe: ")
