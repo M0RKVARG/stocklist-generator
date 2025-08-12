@@ -219,4 +219,3 @@ ttk.Button(tab2, text="Excel-Datei wählen und PDF erzeugen", command=generate_q
 tabControl.pack(expand=1, fill="both")
 
 root.mainloop()
-a
