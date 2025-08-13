@@ -430,7 +430,13 @@ def update_preview(*args):
     text = entry_single_qr.get()
     fmt_value = format_var.get()
     img = render_preview(text, fmt_value)
-    preview_photo = ImageTk.PhotoImage(img)
+
+    # Vorschau kleiner skalieren (60%)
+    scale = 0.6
+    new_size = (max(1, int(img.width * scale)), max(1, int(img.height * scale)))
+    img_small = img.resize(new_size, Image.LANCZOS)
+
+    preview_photo = ImageTk.PhotoImage(img_small)
     preview_label.configure(image=preview_photo)
 
 
@@ -440,7 +446,7 @@ def update_preview(*args):
 
 root = tk.Tk()
 root.title("Lagerkoordinaten & QR-Code Generator")
-root.geometry("850x830")
+root.geometry("850x735")
 root.resizable(False, False)
 
 tabs = ttk.Notebook(root)
@@ -464,14 +470,19 @@ entry_lagerort = ttk.Entry(tab1_center, width=54)
 entry_lagerort.grid(row=1, column=0, columnspan=3)
 ttk.Label(tab1_center, text="").grid(row=2, column=0, columnspan=3)  # Leerzeile
 
-# Anzahl Regale: Label über dem Feld, Radiobuttons rechts daneben (gleiche Zeile wie das Eingabefeld)
+# Anzahl Regale: Label über dem Feld, Eingabe + Radio-Buttons zentriert in einer Reihe
 ttk.Label(tab1_center, text="Anzahl Regale:").grid(row=3, column=0, columnspan=3, pady=(0, 4))
-entry_regale = ttk.Entry(tab1_center, width=27)
-entry_regale.grid(row=4, column=0, columnspan=2, sticky="w")
+
+regal_row = ttk.Frame(tab1_center)
+regal_row.grid(row=4, column=0, columnspan=3)
+
+entry_regale = ttk.Entry(regal_row, width=27)
+entry_regale.pack(side="left")
+
+regaltyp_frame = ttk.Frame(regal_row)
+regaltyp_frame.pack(side="left", padx=(10, 0))
 
 regal_typ_var = tk.StringVar(value="Buchstaben")
-regaltyp_frame = ttk.Frame(tab1_center)
-regaltyp_frame.grid(row=4, column=2, sticky="w", padx=(10, 0))
 ttk.Radiobutton(regaltyp_frame, text="Buchstaben", variable=regal_typ_var, value="Buchstaben").pack(side="left", padx=(0, 8))
 ttk.Radiobutton(regaltyp_frame, text="Zahlen", variable=regal_typ_var, value="Zahlen").pack(side="left")
 
