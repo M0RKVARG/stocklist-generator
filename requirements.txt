@@ -1,0 +1,5 @@
+pandas
+qrcode[pil]
+reportlab
+pillow
+openpyxl
