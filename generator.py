@@ -426,7 +426,7 @@ def render_preview(input_text, fmt_value):
 
 
 def update_preview(*args):
-    global preview_photo
+    global preview_photo, a4_btn_text
     text = entry_single_qr.get()
     fmt_value = format_var.get()
     img = render_preview(text, fmt_value)
@@ -439,13 +439,19 @@ def update_preview(*args):
     preview_photo = ImageTk.PhotoImage(img_small)
     preview_label.configure(image=preview_photo)
 
+    # Button-Label für A4 dynamisch setzen
+    if fmt_value == "75x25 mm":
+        a4_btn_text.set("A4 PDF erzeugen (2 Spalten à 10 Reihen mit 75x25mm)")
+    else:
+        a4_btn_text.set("A4 PDF erzeugen (2 Spalten à 8 Reihen mit 70x32mm)")
+
 
 # --------------------------------
 # GUI
 # --------------------------------
 
 root = tk.Tk()
-root.title("Lagerkoordinaten & QR-Code Generator")
+root.title("Lagerlisten & QR-Code Generator")
 root.geometry("850x735")
 root.resizable(False, False)
 
@@ -504,7 +510,14 @@ ttk.Label(tab1_center, text="").grid(row=11, column=0, columnspan=3)  # Leerzeil
 ttk.Label(tab1_center, text="Besondere Lagerorte:").grid(row=12, column=0, columnspan=3, pady=(0, 4))
 text_besondere = tk.Text(tab1_center, height=10, width=54)
 text_besondere.grid(row=13, column=0, columnspan=3)
-ttk.Label(tab1_center, text="").grid(row=14, column=0, columnspan=3)  # Leerzeile
+
+# Hinweis unter dem Eingabefeld
+ttk.Label(tab1_center, text="Hinweis: Jeder Lagerort in eine separate Zeile.", foreground="grey").grid(
+    row=14, column=0, columnspan=3, pady=(4, 0)
+)
+
+# Leerzeile
+ttk.Label(tab1_center, text="").grid(row=15, column=0, columnspan=3)  # Leerzeile
 
 # Excel erstellen Button
 ttk.Button(
@@ -520,7 +533,7 @@ ttk.Button(
             text_besondere.get("1.0", tk.END).splitlines(),
         )
     ),
-).grid(row=15, column=0, columnspan=3, pady=(4, 12))
+).grid(row=16, column=0, columnspan=3, pady=(4, 12))
 
 # Tab 2
 tab2 = ttk.Frame(tabs)
@@ -567,11 +580,14 @@ ttk.Button(
 ).pack(pady=8)
 ttk.Label(tab2, text="(Benötigt vorher erstellte Excel-Liste)", foreground="grey").pack()
 
+# Dynamisches Label für A4-Button
+a4_btn_text = tk.StringVar(value="A4 PDF erzeugen (2 Spalten à 8 Reihen mit 70x32mm)")
+
 # Leerzeile + Button: A4 PDF (dynamisch je nach Auswahl)
 ttk.Label(tab2, text="").pack()
 ttk.Button(
     tab2,
-    text="A4 PDF erzeugen (nach gewähltem Etikettenformat)",
+    textvariable=a4_btn_text,
     command=lambda: create_qr_labels_a4(
         filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx")]),
         filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF-Datei", "*.pdf")]),
@@ -619,7 +635,7 @@ tabs.pack(expand=1, fill="both")
 footer = ttk.Label(root, text="© copyright 2025 - Jonas Müller - efleetcon®", foreground="grey")
 footer.pack(side="bottom", pady=(6, 8))
 
-# Initiale Vorschau
+# Initiale Vorschau (setzt auch initial den Button-Text korrekt)
 def _init_preview():
     try:
         update_preview()
