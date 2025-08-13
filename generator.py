@@ -16,33 +16,80 @@ from PIL import Image, ImageTk, ImageDraw, ImageFont
 # ----------------------------
 
 def generate_lagerliste(lagerort, regal_typ, regale, faecher, ebenen, besondere_orte):
-    """Erzeugt Lagerliste mit Regal/Fach/Ebene in absteigender Reihenfolge"""
-    data = []
+    """
+    Erzeugt die Excel-Liste wie gewünscht:
+    - Zuerst normale Lagerplätze (Spalten A-G gefüllt, inkl. QR-Daten in E sowie LO/LP).
+    - Besondere Lagerorte werden von ganz oben beginnend in Spalte H eingetragen (= über vorhandene Zeilen),
+      ohne neue Zeilen zu erzwingen. Falls mehr besondere Orte existieren als normale Zeilen, werden
+      zusätzliche Zeilen am Ende angefügt, in denen ausschließlich Spalte H gefüllt ist.
+    Spalten: A Lagerort, B Regal, C Fach, D Ebene, E Daten für QR-Code, F LO, G LP, H besondere Lagerorte
+    """
+    normal_rows = []
 
-    if regale > 0 and faecher > 0 and ebenen > 0:
+    # 1) Normale Lagerplätze (wenn definiert)
+    if regale > 0 and faecher > 0 and ebenen > 0 and lagerort:
         if regal_typ == "Buchstaben":
             regal_labels = list(string.ascii_uppercase)[:regale]
         else:
             regal_labels = [str(i + 1) for i in range(regale)]
-
         regal_labels = regal_labels[::-1]  # absteigend
 
         for regal in regal_labels:
             for fach in range(faecher, 0, -1):
                 for ebene in range(ebenen, 0, -1):
                     qr_data = f"{lagerort};{regal}-{fach}-{ebene}"
-                    data.append([lagerort, regal, fach, ebene, "", qr_data])
+                    # ["Lagerort","Regal","Fach","Ebene","besondere Lagerorte","Daten für QR-Code"]
+                    normal_rows.append([lagerort, regal, fach, ebene, "", qr_data])
 
-    for ort in besondere_orte:
-        ort = ort.strip()
-        if ort:
-            qr_data = f"{ort};"
-            data.append([ort, "", "", "", ort, qr_data])
-
+    # DataFrame zuerst nur mit normalen Zeilen
     df = pd.DataFrame(
-        data,
+        normal_rows,
         columns=["Lagerort", "Regal", "Fach", "Ebene", "besondere Lagerorte", "Daten für QR-Code"],
     )
+
+    # LO/LP-Spalten anhand "Daten für QR-Code" erzeugen
+    if "Daten für QR-Code" in df.columns:
+        if df.empty:
+            df["LO"] = []
+            df["LP"] = []
+        else:
+            split_vals = df["Daten für QR-Code"].astype(str).str.split(";", n=1, expand=True)
+            df["LO"] = split_vals[0].where(split_vals[0].notna(), "")
+            df["LP"] = split_vals[1].fillna("")
+
+    # Besondere Orte bereinigen (leere Zeilen raus)
+    besondere_clean = [o.strip() for o in besondere_orte if o.strip()]
+
+    # 2) Besondere Lagerorte in Spalte H von oben eintragen
+    for i, ort in enumerate(besondere_clean):
+        if i < len(df):
+            df.at[i, "besondere Lagerorte"] = ort
+        else:
+            # Zusätzliche Zeile anhängen, nur Spalte H befüllt
+            df = pd.concat(
+                [
+                    df,
+                    pd.DataFrame(
+                        [[ "", "", "", "", ort, "" ]],  # A-D leer, H=ort, E=QR-Daten leer
+                        columns=["Lagerort", "Regal", "Fach", "Ebene", "besondere Lagerorte", "Daten für QR-Code"],
+                    ),
+                ],
+                ignore_index=True,
+            )
+
+    # LO/LP für etwaige neu angehängte Zeilen ohne QR-Daten sicher leer halten
+    if "LO" not in df.columns:
+        df["LO"] = ""
+    if "LP" not in df.columns:
+        df["LP"] = ""
+    if not df.empty:
+        mask_no_qr = df["Daten für QR-Code"].astype(str).str.strip() == ""
+        df.loc[mask_no_qr, ["LO", "LP"]] = ""
+
+    # "besondere Lagerorte" ganz nach rechts neben LP verschieben
+    col_order = ["Lagerort", "Regal", "Fach", "Ebene", "Daten für QR-Code", "LO", "LP", "besondere Lagerorte"]
+    df = df[col_order]
+
     return df
 
 
@@ -51,9 +98,48 @@ def save_excel(df):
         defaultextension=".xlsx",
         filetypes=[("Excel-Dateien", "*.xlsx")],
     )
-    if file_path:
-        df.to_excel(file_path, index=False)
+    if not file_path:
+        return
+
+    # Versuche Pixelbreiten mit XlsxWriter zu setzen; Fallback auf OpenPyXL mit Zeichenbreiten
+    try:
+        with pd.ExcelWriter(file_path, engine="xlsxwriter") as writer:
+            sheet_name = "Tabelle1"
+            df.to_excel(writer, index=False, sheet_name=sheet_name)
+            worksheet = writer.sheets[sheet_name]
+            # Spaltenbreiten exakt in Pixeln setzen
+            worksheet.set_column_pixels('A:A', 150)  # Lagerort
+            worksheet.set_column_pixels('B:D', 80)   # Regal, Fach, Ebene (optional etwas schmaler)
+            worksheet.set_column_pixels('E:E', 250)  # Daten für QR-Code
+            worksheet.set_column_pixels('F:G', 150)  # LO, LP
+            worksheet.set_column_pixels('H:H', 250)  # besondere Lagerorte
         messagebox.showinfo("Erfolg", f"Excel-Datei gespeichert:\n{file_path}")
+        return
+    except Exception:
+        pass
+
+    # Fallback (OpenPyXL): Breite in "Zeichen" annähern (~ 1 Zeichen ≈ 7 Pixel)
+    def px_to_chars(px):
+        return round(px / 7.0, 1)
+
+    try:
+        with pd.ExcelWriter(file_path, engine="openpyxl") as writer:
+            sheet_name = "Tabelle1"
+            df.to_excel(writer, index=False, sheet_name=sheet_name)
+            ws = writer.sheets[sheet_name]
+            ws.column_dimensions['A'].width = px_to_chars(150)
+            ws.column_dimensions['B'].width = px_to_chars(80)
+            ws.column_dimensions['C'].width = px_to_chars(80)
+            ws.column_dimensions['D'].width = px_to_chars(80)
+            ws.column_dimensions['E'].width = px_to_chars(250)
+            ws.column_dimensions['F'].width = px_to_chars(150)
+            ws.column_dimensions['G'].width = px_to_chars(150)
+            ws.column_dimensions['H'].width = px_to_chars(250)
+        messagebox.showinfo("Erfolg", f"Excel-Datei gespeichert:\n{file_path}")
+    except Exception:
+        # Letzter Fallback: ohne Formatierung speichern
+        df.to_excel(file_path, index=False)
+        messagebox.showinfo("Erfolg", f"Excel-Datei gespeichert (ohne Spaltenbreiten-Formatierung):\n{file_path}")
 
 
 def format_val(val):
@@ -109,7 +195,8 @@ def create_qr_labels_from_excel(excel_path, output_pdf):
         return
 
     df = pd.read_excel(excel_path)
-    df = df[df["besondere Lagerorte"].isna() | (df["besondere Lagerorte"].astype(str).str.strip() == "")]
+    # Alle Zeilen berücksichtigen; Spalte H ignorieren. Nur Zeilen mit QR-Daten verwenden.
+    df = df[df["Daten für QR-Code"].astype(str).str.strip() != ""]
     df = df.iloc[::-1]  # umgekehrte Reihenfolge
 
     page_w = 70 * mm
@@ -172,7 +259,8 @@ def create_qr_labels_a4(excel_path, output_pdf, fmt_value):
         return
 
     df = pd.read_excel(excel_path)
-    df = df[df["besondere Lagerorte"].isna() | (df["besondere Lagerorte"].astype(str).str.strip() == "")]
+    # Alle Zeilen berücksichtigen; Spalte H ignorieren. Nur Zeilen mit QR-Daten verwenden.
+    df = df[df["Daten für QR-Code"].astype(str).str.strip() != ""]
     df = df.iloc[::-1]
 
     label_w_mm, label_h_mm, cols, rows = get_label_specs(fmt_value)
@@ -222,7 +310,7 @@ def create_qr_labels_a4(excel_path, output_pdf, fmt_value):
         tw = c.stringWidth(lagerplatz, "Helvetica-Bold", fs_lp)
         c.drawString(x + text_x_offset + (text_w - tw) / 2, start_y, lagerplatz)
 
-        # Rahmen um das Label (dünn, für Ausschneiden)
+        # Rahmen um das Label (1px-ähnlich, dünn, für Ausschneiden)
         c.setLineWidth(0.25)
         c.rect(x, y, label_w, label_h, stroke=1, fill=0)
 
@@ -244,10 +332,14 @@ def create_qr_labels_a4(excel_path, output_pdf, fmt_value):
 
 
 # --------------------------------
-# Punkt 3: Einzelnes Etikett
+# Punkt 3: Einzelnes Lagerplatzetikett (70x32mm)
 # --------------------------------
 
 def create_single_qr(input_text, output_pdf):
+    """
+    Erzeugt ein einzelnes Etikett (70x32mm) mit QR links und Texten rechts.
+    input_text erwartet Format 'Lagerort;Lagerplatz'. Der komplette input_text wird als QR-Inhalt genutzt.
+    """
     if not input_text or not output_pdf:
         return
 
@@ -257,20 +349,22 @@ def create_single_qr(input_text, output_pdf):
     text_x = 26 * mm
     text_w = page_w - text_x - 2 * mm
 
+    # Zerlege Anzeige-Texte
+    if ";" in input_text:
+        lagerort, lagerplatz = input_text.split(";", 1)
+    else:
+        lagerort, lagerplatz = input_text, ""
+
     c = canvas.Canvas(output_pdf, pagesize=(page_w, page_h))
 
+    # QR-Code
     qr_img = qrcode.make(input_text).convert("RGB")
     buf = BytesIO()
     qr_img.save(buf, format="PNG")
     buf.seek(0)
-    c.drawImage(ImageReader(buf), 2 * mm, (page_h - qr_size) / 2, qr_size, qr_size)
+    c.drawImage(ImageReader(buf), 2 * mm, 5 * mm, qr_size, qr_size)
 
-    try:
-        lagerort, lagerplatz = input_text.split(";", 1)
-    except Exception:
-        lagerort = input_text
-        lagerplatz = ""
-
+    # Texte vertikal zentriert
     fs_lo = fit_text_to_width(c, lagerort, text_w, 10, font_name="Helvetica")
     fs_lp = fit_text_to_width(c, lagerplatz, text_w, 22, font_name="Helvetica-Bold")
     total_h = fs_lo + fs_lp + fs_lo
@@ -286,7 +380,7 @@ def create_single_qr(input_text, output_pdf):
 
     c.showPage()
     c.save()
-    messagebox.showinfo("Erfolg", f"Einzelnes QR-Etikett erstellt: {output_pdf}")
+    messagebox.showinfo("Erfolg", f"PDF erstellt: {output_pdf}")
 
 
 # --------------------------------
@@ -294,21 +388,24 @@ def create_single_qr(input_text, output_pdf):
 # --------------------------------
 
 def create_special_locations_pdf(excel_path, output_pdf):
+    """
+    Nutzt ausschließlich Spalte H ("besondere Lagerorte") aus der Excel-Datei.
+    QR-Code-Daten werden als "<Text>;" aufgebaut, alle anderen Felder sind irrelevant/leergelassen.
+    """
     if not excel_path or not output_pdf:
         return
 
     df = pd.read_excel(excel_path)
+    # Nur Zeilen, die einen Eintrag in "besondere Lagerorte" haben
     df = df[df["besondere Lagerorte"].notna() & (df["besondere Lagerorte"].astype(str).str.strip() != "")]
     c = canvas.Canvas(output_pdf, pagesize=A4)
     page_w, page_h = A4
 
     for _, row in df.iterrows():
-        qr_value = str(row["Daten für QR-Code"])
-        lagerort = str(row["Lagerort"])
-        regal = format_val(row["Regal"])
-        fach = format_val(row["Fach"])
-        ebene = format_val(row["Ebene"])
-        lagerplatz = f"{regal}-{fach}-{ebene}" if regal else ""
+        special_text = str(row["besondere Lagerorte"]).strip()
+        qr_value = f"{special_text};"  # QR aus Spalte H
+        lagerort = special_text        # Obere Textzeile = spezieller Ort
+        lagerplatz = ""                # Kein Lagerplatz für besondere Orte
 
         # 1/3 Seite für Text
         fs_lo = fit_text_to_width(c, lagerort, page_w - 40, 48, font_name="Helvetica")
@@ -320,7 +417,7 @@ def create_special_locations_pdf(excel_path, output_pdf):
         y_cursor = page_h - fs_lo * 2
         c.drawString((page_w - tw) / 2, y_cursor, lagerort)
 
-        # Lagerplatz darunter
+        # Lagerplatz darunter (leer)
         c.setFont("Helvetica-Bold", fs_lp)
         tw = c.stringWidth(lagerplatz, "Helvetica-Bold", fs_lp)
         y_cursor -= (fs_lp + 10)
@@ -482,7 +579,7 @@ ttk.Label(tab1_center, text="Anzahl Regale:").grid(row=3, column=0, columnspan=3
 regal_row = ttk.Frame(tab1_center)
 regal_row.grid(row=4, column=0, columnspan=3)
 
-entry_regale = ttk.Entry(regal_row, width=27)
+entry_regale = ttk.Entry(regal_row, width=30)  # etwas breiter, Ausrichtung mit "Zahlen"
 entry_regale.pack(side="left")
 
 regaltyp_frame = ttk.Frame(regal_row)
