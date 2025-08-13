@@ -408,16 +408,18 @@ def render_preview(input_text, fmt_value):
     w_lo, h_lo = pil_measure_text(draw, lagerort, font_lo)
     w_lp, h_lp = pil_measure_text(draw, lagerplatz, font_lp)
 
-    # Leerzeile/Abstand zwischen Lagerort (oben) und Lagerplatz (zentriert)
+    # Leerzeile/Abstand zwischen Lagerort und Lagerplatz
     gap_px = mm_to_px(4)
 
-    # Lagerplatz mittig, Lagerort darüber (mit zusätzlichem Abstand)
-    y_lp = (h - h_lp) // 2
-    y_lo = y_lp - h_lo - gap_px
+    # Gesamthöhe der beiden Textzeilen inkl. Abstand und vertikal zentrieren
+    total_h = h_lo + gap_px + h_lp
+    start_y = (h - total_h) // 2
+    y_lo = start_y
+    y_lp = y_lo + h_lo + gap_px
 
     # Lagerort oben
     draw.text((text_x + (text_w - w_lo) // 2, y_lo), lagerort, font=font_lo, fill="black")
-    # Lagerplatz mittig
+    # Lagerplatz darunter
     draw.text((text_x + (text_w - w_lp) // 2, y_lp), lagerplatz, font=font_lp, fill="black")
 
     return img
@@ -464,7 +466,7 @@ ttk.Label(tab1_center, text="").grid(row=2, column=0, columnspan=3)  # Leerzeile
 
 # Anzahl Regale: Label über dem Feld, Radiobuttons rechts daneben (gleiche Zeile wie das Eingabefeld)
 ttk.Label(tab1_center, text="Anzahl Regale:").grid(row=3, column=0, columnspan=3, pady=(0, 4))
-entry_regale = ttk.Entry(tab1_center, width=54)
+entry_regale = ttk.Entry(tab1_center, width=27)
 entry_regale.grid(row=4, column=0, columnspan=2, sticky="w")
 
 regal_typ_var = tk.StringVar(value="Buchstaben")
