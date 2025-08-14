@@ -11,18 +11,26 @@ from io import BytesIO
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 
 
+# --------------------------------
+# Konfiguration: Hintergrundgrafik für Sonderlagerorte A4-PDF
+# --------------------------------
+# Lege die Datei unter diesem Pfad ab (Standard: im gleichen Ordner wie das Skript).
+BACKGROUND_IMAGE_PATH = "QR_A4_Hintergrund_hoch.png"  # z.B. "sonderlagerorte_bg.jpg" oder "assets/bg.png"
+BACKGROUND_FIT_MODE = "cover"  # "cover" (seitenfüllend, Beschnitt möglich) oder "contain" (komplett sichtbar, evtl. Ränder)
+
+
 # ----------------------------
 # Hilfsfunktionen für Daten
 # ----------------------------
 
-def generate_lagerliste(lagerort, regal_typ, regale, faecher, ebenen, besondere_orte):
+def generate_lagerliste(lagerort, regal_typ, regale, faecher, ebenen, sonderorte):
     """
     Erzeugt die Excel-Liste wie gewünscht:
     - Zuerst normale Lagerplätze (Spalten A-G gefüllt, inkl. QR-Daten in E sowie LO/LP).
-    - Besondere Lagerorte werden von ganz oben beginnend in Spalte H eingetragen (= über vorhandene Zeilen),
-      ohne neue Zeilen zu erzwingen. Falls mehr besondere Orte existieren als normale Zeilen, werden
+    - Sonderlagerorte werden von ganz oben beginnend in Spalte H eingetragen (= über vorhandene Zeilen),
+      ohne neue Zeilen zu erzwingen. Falls mehr Sonderlagerorte existieren als normale Zeilen, werden
       zusätzliche Zeilen am Ende angefügt, in denen ausschließlich Spalte H gefüllt ist.
-    Spalten: A Lagerort, B Regal, C Fach, D Ebene, E Daten für QR-Code, F LO, G LP, H besondere Lagerorte
+    Spalten: A Lagerort, B Regal, C Fach, D Ebene, E Daten für QR-Code, F LO, G LP, H Sonderlagerorte
     """
     normal_rows = []
 
@@ -38,13 +46,13 @@ def generate_lagerliste(lagerort, regal_typ, regale, faecher, ebenen, besondere_
             for fach in range(faecher, 0, -1):
                 for ebene in range(ebenen, 0, -1):
                     qr_data = f"{lagerort};{regal}-{fach}-{ebene}"
-                    # ["Lagerort","Regal","Fach","Ebene","besondere Lagerorte","Daten für QR-Code"]
+                    # ["Lagerort","Regal","Fach","Ebene","Sonderlagerorte","Daten für QR-Code"]
                     normal_rows.append([lagerort, regal, fach, ebene, "", qr_data])
 
     # DataFrame zuerst nur mit normalen Zeilen
     df = pd.DataFrame(
         normal_rows,
-        columns=["Lagerort", "Regal", "Fach", "Ebene", "besondere Lagerorte", "Daten für QR-Code"],
+        columns=["Lagerort", "Regal", "Fach", "Ebene", "Sonderlagerorte", "Daten für QR-Code"],
     )
 
     # LO/LP-Spalten anhand "Daten für QR-Code" erzeugen
@@ -57,21 +65,21 @@ def generate_lagerliste(lagerort, regal_typ, regale, faecher, ebenen, besondere_
             df["LO"] = split_vals[0].where(split_vals[0].notna(), "")
             df["LP"] = split_vals[1].fillna("")
 
-    # Besondere Orte bereinigen (leere Zeilen raus)
-    besondere_clean = [o.strip() for o in besondere_orte if o.strip()]
+    # Sonderorte bereinigen (leere Zeilen raus)
+    sonder_clean = [o.strip() for o in sonderorte if o.strip()]
 
-    # 2) Besondere Lagerorte in Spalte H von oben eintragen
-    for i, ort in enumerate(besondere_clean):
+    # 2) Sonderlagerorte in Spalte H von oben eintragen
+    for i, ort in enumerate(sonder_clean):
         if i < len(df):
-            df.at[i, "besondere Lagerorte"] = ort
+            df.at[i, "Sonderlagerorte"] = ort
         else:
             # Zusätzliche Zeile anhängen, nur Spalte H befüllt
             df = pd.concat(
                 [
                     df,
                     pd.DataFrame(
-                        [[ "", "", "", "", ort, "" ]],  # A-D leer, H=ort, E=QR-Daten leer
-                        columns=["Lagerort", "Regal", "Fach", "Ebene", "besondere Lagerorte", "Daten für QR-Code"],
+                        [["", "", "", "", ort, ""]],  # A-D leer, H=ort, E=QR-Daten leer
+                        columns=["Lagerort", "Regal", "Fach", "Ebene", "Sonderlagerorte", "Daten für QR-Code"],
                     ),
                 ],
                 ignore_index=True,
@@ -86,8 +94,8 @@ def generate_lagerliste(lagerort, regal_typ, regale, faecher, ebenen, besondere_
         mask_no_qr = df["Daten für QR-Code"].astype(str).str.strip() == ""
         df.loc[mask_no_qr, ["LO", "LP"]] = ""
 
-    # "besondere Lagerorte" ganz nach rechts neben LP verschieben
-    col_order = ["Lagerort", "Regal", "Fach", "Ebene", "Daten für QR-Code", "LO", "LP", "besondere Lagerorte"]
+    # "Sonderlagerorte" ganz nach rechts neben LP verschieben
+    col_order = ["Lagerort", "Regal", "Fach", "Ebene", "Daten für QR-Code", "LO", "LP", "Sonderlagerorte"]
     df = df[col_order]
 
     return df
@@ -109,10 +117,10 @@ def save_excel(df):
             worksheet = writer.sheets[sheet_name]
             # Spaltenbreiten exakt in Pixeln setzen
             worksheet.set_column_pixels('A:A', 150)  # Lagerort
-            worksheet.set_column_pixels('B:D', 80)   # Regal, Fach, Ebene (optional etwas schmaler)
+            worksheet.set_column_pixels('B:D', 80)   # Regal, Fach, Ebene
             worksheet.set_column_pixels('E:E', 250)  # Daten für QR-Code
             worksheet.set_column_pixels('F:G', 150)  # LO, LP
-            worksheet.set_column_pixels('H:H', 250)  # besondere Lagerorte
+            worksheet.set_column_pixels('H:H', 250)  # Sonderlagerorte
         messagebox.showinfo("Erfolg", f"Excel-Datei gespeichert:\n{file_path}")
         return
     except Exception:
@@ -171,7 +179,7 @@ def pil_measure_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeT
 
 
 # --------------------------------
-# PDF-Helfer
+# PDF-Helfer (ReportLab)
 # --------------------------------
 
 def fit_text_to_width(c, text, max_width, max_font_size, min_font_size=6, font_name="Helvetica-Bold"):
@@ -186,21 +194,71 @@ def fit_text_to_width(c, text, max_width, max_font_size, min_font_size=6, font_n
     return min_font_size
 
 
+def _draw_background_fullpage(c, page_w, page_h, bg_path, mode="cover"):
+    """
+    Zeichnet eine Hintergrundgrafik seitenfüllend (cover) oder komplett sichtbar (contain) auf die Seite.
+    """
+    if not bg_path:
+        return
+    try:
+        img = Image.open(bg_path)
+        iw, ih = img.size
+        ir = ImageReader(img)
+
+        page_ratio = page_w / page_h
+        img_ratio = iw / ih
+
+        if mode == "contain":
+            # Bild vollständig sichtbar, passt in die Seite (Ränder möglich)
+            if img_ratio >= page_ratio:
+                draw_w = page_w
+                draw_h = page_w / img_ratio
+            else:
+                draw_h = page_h
+                draw_w = page_h * img_ratio
+            x = (page_w - draw_w) / 2
+            y = (page_h - draw_h) / 2
+        else:
+            # cover: seitenfüllend, ggf. Beschnitt
+            if img_ratio >= page_ratio:
+                # durch Höhe begrenzt (Bild breiter als Seite)
+                draw_h = page_h
+                draw_w = page_h * img_ratio
+            else:
+                # durch Breite begrenzt (Bild schmaler als Seite)
+                draw_w = page_w
+                draw_h = page_w / img_ratio
+            x = (page_w - draw_w) / 2
+            y = (page_h - draw_h) / 2
+
+        # Hintergrund zeichnen (unter allen späteren Inhalten)
+        c.drawImage(ir, x, y, width=draw_w, height=draw_h, mask='auto')
+    except Exception:
+        # Optional: logging/Messagebox
+        pass
+
+
 # --------------------------------
-# Punkt 1: Komplette PDF (Einzel-Etiketten 70x32mm)
+# Punkt 1: Komplette PDF (Einzel-Etiketten dynamisch nach Format)
 # --------------------------------
 
-def create_qr_labels_from_excel(excel_path, output_pdf):
+def create_qr_labels_from_excel(excel_path, output_pdf, fmt_value):
     if not excel_path or not output_pdf:
         return
 
     df = pd.read_excel(excel_path)
+
+    # Wenn alte Excel mit "besondere Lagerorte" geöffnet wird: in "Sonderlagerorte" umbenennen
+    if "besondere Lagerorte" in df.columns and "Sonderlagerorte" not in df.columns:
+        df.rename(columns={"besondere Lagerorte": "Sonderlagerorte"}, inplace=True)
+
     # Alle Zeilen berücksichtigen; Spalte H ignorieren. Nur Zeilen mit QR-Daten verwenden.
     df = df[df["Daten für QR-Code"].astype(str).str.strip() != ""]
     df = df.iloc[::-1]  # umgekehrte Reihenfolge
 
-    page_w = 70 * mm
-    page_h = 32 * mm
+    label_w_mm, label_h_mm, _, _ = get_label_specs(fmt_value)
+    page_w = label_w_mm * mm
+    page_h = label_h_mm * mm
     qr_size = 22 * mm
     text_x = 26 * mm
     text_w = page_w - text_x - 2 * mm
@@ -219,7 +277,8 @@ def create_qr_labels_from_excel(excel_path, output_pdf):
         buf = BytesIO()
         qr_img.save(buf, format="PNG")
         buf.seek(0)
-        c.drawImage(ImageReader(buf), 2 * mm, 5 * mm, qr_size, qr_size)
+        y_qr = (page_h - qr_size) / 2
+        c.drawImage(ImageReader(buf), 2 * mm, y_qr, qr_size, qr_size)
 
         fs_lo = fit_text_to_width(c, lagerort, text_w, 10, font_name="Helvetica")
         fs_lp = fit_text_to_width(c, lagerplatz, text_w, 22, font_name="Helvetica-Bold")
@@ -259,6 +318,10 @@ def create_qr_labels_a4(excel_path, output_pdf, fmt_value):
         return
 
     df = pd.read_excel(excel_path)
+    # Abwärtskompatibel: Spalte umbenennen, falls nötig
+    if "besondere Lagerorte" in df.columns and "Sonderlagerorte" not in df.columns:
+        df.rename(columns={"besondere Lagerorte": "Sonderlagerorte"}, inplace=True)
+
     # Alle Zeilen berücksichtigen; Spalte H ignorieren. Nur Zeilen mit QR-Daten verwenden.
     df = df[df["Daten für QR-Code"].astype(str).str.strip() != ""]
     df = df.iloc[::-1]
@@ -332,19 +395,20 @@ def create_qr_labels_a4(excel_path, output_pdf, fmt_value):
 
 
 # --------------------------------
-# Punkt 3: Einzelnes Lagerplatzetikett (70x32mm)
+# Punkt 3: Einzelnes Lagerplatzetikett
 # --------------------------------
 
-def create_single_qr(input_text, output_pdf):
+def create_single_qr(input_text, output_pdf, fmt_value):
     """
-    Erzeugt ein einzelnes Etikett (70x32mm) mit QR links und Texten rechts.
+    Erzeugt ein einzelnes Etikett (je nach Auswahl 70x32mm oder 75x25mm) mit QR links und Texten rechts.
     input_text erwartet Format 'Lagerort;Lagerplatz'. Der komplette input_text wird als QR-Inhalt genutzt.
     """
     if not input_text or not output_pdf:
         return
 
-    page_w = 70 * mm
-    page_h = 32 * mm
+    label_w_mm, label_h_mm, _, _ = get_label_specs(fmt_value)
+    page_w = label_w_mm * mm
+    page_h = label_h_mm * mm
     qr_size = 22 * mm
     text_x = 26 * mm
     text_w = page_w - text_x - 2 * mm
@@ -362,7 +426,8 @@ def create_single_qr(input_text, output_pdf):
     buf = BytesIO()
     qr_img.save(buf, format="PNG")
     buf.seek(0)
-    c.drawImage(ImageReader(buf), 2 * mm, 5 * mm, qr_size, qr_size)
+    y_qr = (page_h - qr_size) / 2
+    c.drawImage(ImageReader(buf), 2 * mm, y_qr, qr_size, qr_size)
 
     # Texte vertikal zentriert
     fs_lo = fit_text_to_width(c, lagerort, text_w, 10, font_name="Helvetica")
@@ -384,28 +449,36 @@ def create_single_qr(input_text, output_pdf):
 
 
 # --------------------------------
-# Punkt 4: PDF für besondere Lagerorte
+# Punkt 4: PDF für Sonderlagerorte (mit festem Hintergrund)
 # --------------------------------
 
 def create_special_locations_pdf(excel_path, output_pdf):
     """
-    Nutzt ausschließlich Spalte H ("besondere Lagerorte") aus der Excel-Datei.
+    Nutzt ausschließlich Spalte H ("Sonderlagerorte") aus der Excel-Datei.
+    Auf jeder Seite wird eine feste Hintergrundgrafik gezeichnet (siehe BACKGROUND_IMAGE_PATH / BACKGROUND_FIT_MODE).
     QR-Code-Daten werden als "<Text>;" aufgebaut, alle anderen Felder sind irrelevant/leergelassen.
     """
     if not excel_path or not output_pdf:
         return
 
     df = pd.read_excel(excel_path)
-    # Nur Zeilen, die einen Eintrag in "besondere Lagerorte" haben
-    df = df[df["besondere Lagerorte"].notna() & (df["besondere Lagerorte"].astype(str).str.strip() != "")]
+    # Abwärtskompatibel: Spalte umbenennen, falls nötig
+    if "besondere Lagerorte" in df.columns and "Sonderlagerorte" not in df.columns:
+        df.rename(columns={"besondere Lagerorte": "Sonderlagerorte"}, inplace=True)
+
+    # Nur Zeilen, die einen Eintrag in "Sonderlagerorte" haben
+    df = df[df["Sonderlagerorte"].notna() & (df["Sonderlagerorte"].astype(str).str.strip() != "")]
     c = canvas.Canvas(output_pdf, pagesize=A4)
     page_w, page_h = A4
 
     for _, row in df.iterrows():
-        special_text = str(row["besondere Lagerorte"]).strip()
+        # 1) Hintergrund pro Seite (hart eingebunden)
+        _draw_background_fullpage(c, page_w, page_h, BACKGROUND_IMAGE_PATH, mode=BACKGROUND_FIT_MODE)
+
+        special_text = str(row["Sonderlagerorte"]).strip()
         qr_value = f"{special_text};"  # QR aus Spalte H
         lagerort = special_text        # Obere Textzeile = spezieller Ort
-        lagerplatz = ""                # Kein Lagerplatz für besondere Orte
+        lagerplatz = ""                # Kein Lagerplatz für Sonderlagerorte
 
         # 1/3 Seite für Text
         fs_lo = fit_text_to_width(c, lagerort, page_w - 40, 48, font_name="Helvetica")
@@ -414,7 +487,7 @@ def create_special_locations_pdf(excel_path, output_pdf):
         # Lagerort oben
         c.setFont("Helvetica", fs_lo)
         tw = c.stringWidth(lagerort, "Helvetica", fs_lo)
-        y_cursor = page_h - fs_lo * 2
+        y_cursor = page_h - fs_lo * 4
         c.drawString((page_w - tw) / 2, y_cursor, lagerort)
 
         # Lagerplatz darunter (leer)
@@ -435,7 +508,7 @@ def create_special_locations_pdf(excel_path, output_pdf):
         c.showPage()
 
     c.save()
-    messagebox.showinfo("Erfolg", f"Besondere Lagerorte PDF erstellt: {output_pdf}")
+    messagebox.showinfo("Erfolg", f"Sonderlagerorte PDF erstellt: {output_pdf}")
 
 
 # --------------------------------
@@ -603,10 +676,10 @@ entry_ebenen = ttk.Entry(tab1_center, width=54)
 entry_ebenen.grid(row=10, column=0, columnspan=3)
 ttk.Label(tab1_center, text="").grid(row=11, column=0, columnspan=3)  # Leerzeile
 
-# Besondere Lagerorte (doppelte Höhe)
-ttk.Label(tab1_center, text="Besondere Lagerorte:").grid(row=12, column=0, columnspan=3, pady=(0, 4))
-text_besondere = tk.Text(tab1_center, height=10, width=54)
-text_besondere.grid(row=13, column=0, columnspan=3)
+# Sonderlagerorte (doppelte Höhe)
+ttk.Label(tab1_center, text="Sonderlagerorte:").grid(row=12, column=0, columnspan=3, pady=(0, 4))
+text_sonder = tk.Text(tab1_center, height=10, width=54)
+text_sonder.grid(row=13, column=0, columnspan=3)
 
 # Hinweis unter dem Eingabefeld
 ttk.Label(tab1_center, text="Hinweis: Jeder Lagerort in eine separate Zeile.", foreground="grey").grid(
@@ -627,7 +700,7 @@ ttk.Button(
             int(entry_regale.get() or 0),
             int(entry_faecher.get() or 0),
             int(entry_ebenen.get() or 0),
-            text_besondere.get("1.0", tk.END).splitlines(),
+            text_sonder.get("1.0", tk.END).splitlines(),
         )
     ),
 ).grid(row=16, column=0, columnspan=3, pady=(4, 12))
@@ -665,14 +738,15 @@ rb2 = ttk.Radiobutton(
 )
 rb2.pack(side="left", padx=12)
 
-# Leerzeile + Button: Komplette PDF (ohne besondere Lagerorte)
+# Leerzeile + Button: Komplette PDF (ohne Sonderlagerorte)
 ttk.Label(tab2, text="").pack()
 ttk.Button(
     tab2,
-    text="Komplette PDF (ohne besondere Lagerorte)",
+    text="Komplette PDF (ohne Sonderlagerorte)",
     command=lambda: create_qr_labels_from_excel(
         filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx")]),
         filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF-Datei", "*.pdf")]),
+        format_var.get(),
     ),
 ).pack(pady=8)
 ttk.Label(tab2, text="(Benötigt vorher erstellte Excel-Liste)", foreground="grey").pack()
@@ -707,18 +781,19 @@ preview_label.pack(pady=(10, 8))
 
 ttk.Button(
     tab2,
-    text="PDF für einzelnes Lagerplatzetikett erzeugen",
+    text="PDF für einzelnes Lagerplatzetikett erzeugen (nutzt gewähltes Format)",
     command=lambda: create_single_qr(
         entry_single_qr.get(),
         filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF-Datei", "*.pdf")]),
+        format_var.get(),
     ),
 ).pack(pady=(4, 12))
 
-# Leerzeile + PDF für besondere Lagerorte
+# Leerzeile + PDF für Sonderlagerorte
 ttk.Label(tab2, text="").pack()
 ttk.Button(
     tab2,
-    text="PDF für besondere Lagerorte",
+    text="A4 PDF für Sonderlagerorte",
     command=lambda: create_special_locations_pdf(
         filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx")]),
         filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF-Datei", "*.pdf")]),
